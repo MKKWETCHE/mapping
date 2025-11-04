@@ -7,7 +7,6 @@ from typing import Dict, List
 import time 
 
 # --- File-dependent Constants ---
-# This path should point to your logo file (e.g., 'muuto_logo.png' in the same directory)
 try:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     LOGO_PATH = os.path.join(BASE_DIR, "muuto_logo.png")
@@ -39,7 +38,7 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Styling (Ensures all main text is dark/black)
+# Styling (Ensures download button text is white)
 # -----------------------------
 st.markdown(
     """
@@ -48,12 +47,12 @@ st.markdown(
     .main .block-container { background-color: #EFEEEB !important; padding-top: 2rem; }
     
     /* Headings for a structured look and better branding */
-    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; } /* Brand Color for H1 */
+    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; }
     h2 { color: #333 !important; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #CCC; } 
     h3 { color: #5B4A14; font-size: 1.5em; padding-bottom: 3px; margin-top: 20px; margin-bottom: 10px; }
     h4 { color: #333 !important; font-size: 1.1em; margin-top: 15px; margin-bottom: 5px; }
 
-    /* Ensure all general text is dark/black for readability (including st.markdown and labels) */
+    /* Ensure all general text is dark/black for readability */
     .stMarkdown, label, p, .stCaption, div[data-testid="stText"] { color: #333 !important; }
 
     /* Info/Alert boxes */
@@ -75,13 +74,21 @@ st.markdown(
     /* Buttons (Muuto Brand Accent) */
     div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"],
     div[data-testid="stButton"] button[data-testid^="stBaseButton"] {
-        border: 1px solid #5B4A14 !important; background-color: #5B4A14 !important; color: #FFFFFF !important;
-        padding: 0.5rem 1rem !important; font-size: 1rem !important; line-height: 1.5 !important; border-radius: 0.25rem !important;
-        font-weight: 600 !important; text-transform: uppercase !important;
+        border: 1px solid #5B4A14 !important; 
+        background-color: #5B4A14 !important; 
+        color: #FFFFFF !important; /* DOWNLOAD BUTTON TEXT IS WHITE */
+        padding: 0.5rem 1rem !important; 
+        font-size: 1rem !important; 
+        line-height: 1.5 !important; 
+        border-radius: 0.25rem !important;
+        font-weight: 600 !important; 
+        text-transform: uppercase !important;
     }
     div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"]:hover,
     div[data-testid="stButton"] button[data-testid^="stBaseButton"]:hover {
-        background-color: #4A3D10 !important; color: #FFFFFF !important; border-color: #4A3D10 !important;
+        background-color: #4A3D10 !important; 
+        color: #FFFFFF !important; 
+        border-color: #4A3D10 !important;
     }
     
     .stDataFrame {
@@ -113,12 +120,12 @@ def parse_pasted_ids(raw: str) -> List[str]:
 def to_csv_export_url(url: str) -> str:
     """
     Accepts a Google Sheets URL and returns a direct CSV export URL.
-    This function is only for internal use to get the raw data link.
     """
     if not url:
         return ""
     url = url.strip()
     
+    # Check for the standard (shorter) /edit or standard ID format
     m_edit = re.search(r"https://docs.google.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     if m_edit:
         sheet_id = m_edit.group(1)
@@ -126,6 +133,7 @@ def to_csv_export_url(url: str) -> str:
         gid = gid_match.group(1) if gid_match else "0"
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         
+    # Check for the long, published ID format (d/e/...) for completeness
     m_pub = re.search(r"https://docs.google.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", url)
     if m_pub:
         doc_id_e = m_pub.group(1)
@@ -136,7 +144,9 @@ def to_csv_export_url(url: str) -> str:
     return url
 
 
-@st.cache_data(show_spinner="Loading and preparing mapping database...") # Changed spinner text
+# NOTE: @st.cache_data is kept here, but the call to this function is moved
+# to be triggered only AFTER IDs are pasted (in the main logic).
+@st.cache_data(show_spinner="Loading and preparing mapping database...")
 def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
     """Loads mapping data from Google Sheets (internal function)."""
     if not csv_url:
@@ -148,7 +158,7 @@ def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
                 df[c] = df[c].astype(str).str.strip()
         return df
     except Exception as e:
-        # Simplified error message for the customer, keeping the detailed error only for internal debugging via Streamlit logs.
+        # Simplified error message for the customer
         st.error(
             "❌ **Conversion Tool Error.** The mapping database could not be loaded. "
             "Please try refreshing the page. If the issue persists, contact Muuto support."
@@ -193,33 +203,6 @@ def to_xlsx_bytes_with_spinner(df: pd.DataFrame, sheet_name: str = "Conversion O
         return buf.getvalue()
 
 # -----------------------------
-# Internal Setup (Hidden from UI)
-# -----------------------------
-csv_url = to_csv_export_url(DEFAULT_SHEET_URL)
-mapping_df = read_mapping_from_gsheets(csv_url) if csv_url else pd.DataFrame()
-
-# Check for successful internal load
-if mapping_df.empty:
-    st.stop() # Stop the app if internal loading fails and error message is displayed
-
-# Internal column validation and preparation
-required = OUTPUT_HEADERS + ["OLD Item-variant", "Ean no."]
-colmap = map_case_insensitive(mapping_df, required)
-
-if not colmap.get("OLD Item-variant") or not colmap.get("Ean no."):
-    st.error(
-        "❌ Internal Error: Required mapping columns are missing. Please contact Muuto support."
-    )
-    st.stop()
-
-old_col = colmap["OLD Item-variant"]
-ean_col = colmap["Ean no."]
-work = mapping_df.copy()
-work[old_col] = work[old_col].astype(str).str.strip()
-work[ean_col] = work[ean_col].astype(str).str.strip()
-
-
-# -----------------------------
 # App Main Content (Customer-facing flow)
 # -----------------------------
 
@@ -244,7 +227,7 @@ with right:
 st.markdown("---")
 
 # -----------------------------
-# Step 1: Paste Item IDs (NOW THE ONLY INPUT STEP)
+# Step 1: Paste Item IDs (Input collection)
 # -----------------------------
 st.header("1. Paste Item IDs")
 
@@ -262,13 +245,40 @@ ids = parse_pasted_ids(raw_input)
 
 
 # -----------------------------
-# Step 2: Results and Export (SIMPLIFIED)
+# Conditional Logic: Load data only if IDs are present
 # -----------------------------
-st.header("2. Results and Export")
+if ids:
+    # --- Internal Setup (TRIGGERED HERE) ---
+    # Convert Google Sheet URL to CSV export URL
+    csv_url = to_csv_export_url(DEFAULT_SHEET_URL)
+    
+    # Load data (spinner from @st.cache_data is triggered here)
+    mapping_df = read_mapping_from_gsheets(csv_url)
+    
+    if mapping_df.empty:
+        st.stop() # Stop the app if internal loading fails
 
-if not ids:
-    st.info("Paste your Item IDs in Step 1 to run the lookup.")
-else:
+    # Internal column validation and preparation
+    required = OUTPUT_HEADERS + ["OLD Item-variant", "Ean no."]
+    colmap = map_case_insensitive(mapping_df, required)
+
+    if not colmap.get("OLD Item-variant") or not colmap.get("Ean no."):
+        st.error(
+            "❌ Internal Error: Required mapping columns are missing. Please contact Muuto support."
+        )
+        st.stop()
+
+    old_col = colmap["OLD Item-variant"]
+    ean_col = colmap["Ean no."]
+    work = mapping_df.copy()
+    work[old_col] = work[old_col].astype(str).str.strip()
+    work[ean_col] = work[ean_col].astype(str).str.strip()
+
+    # -----------------------------
+    # Step 2: Results and Export
+    # -----------------------------
+    st.header("2. Results and Export")
+
     # --- Lookup Logic ---
     mask = work[old_col].isin(ids) | work[ean_col].isin(ids)
     matches = work.loc[mask].copy()
@@ -316,6 +326,11 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_button"
     )
+
+else:
+    # Message shown when app loads, before IDs are pasted
+    st.info("Paste your Item IDs in Step 1 to run the lookup.")
+
 
 # --- Customer Support Note ---
 st.markdown("---")
