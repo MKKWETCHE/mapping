@@ -4,6 +4,7 @@ from io import BytesIO
 import os
 import re
 from typing import Dict, List
+import time # Tilføjet for spinner
 
 # --- File-dependent Constants ---
 # This path should point to your logo file (e.g., 'muuto_logo.png' in the same directory)
@@ -16,7 +17,7 @@ except NameError:
 # -----------------------------
 # Constants
 # -----------------------------
-# UPDATED WITH THE USER'S SPECIFIC BROWSER LINK INCLUDING GID
+# USER'S SPECIFIC BROWSER LINK INCLUDING GID
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1S50it_q1BahpZCPW8dbuN7DyOMnyDgFIg76xIDSoXEk/edit?gid=1056617222#gid=1056617222"
 
 OUTPUT_HEADERS = [
@@ -38,7 +39,7 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Styling (Refined for Muuto brand experience)
+# Styling (Ensures all main text is dark/black)
 # -----------------------------
 st.markdown(
     """
@@ -47,12 +48,15 @@ st.markdown(
     .main .block-container { background-color: #EFEEEB !important; padding-top: 2rem; }
     
     /* Headings for a structured look and better branding */
-    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; }
-    h2 { color: #333; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #CCC; } 
+    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; } /* Brand Color for H1 */
+    h2 { color: #333 !important; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #CCC; } 
     h3 { color: #5B4A14; font-size: 1.5em; padding-bottom: 3px; margin-top: 20px; margin-bottom: 10px; }
-    h4 { color: #333; font-size: 1.1em; margin-top: 15px; margin-bottom: 5px; }
+    h4 { color: #333 !important; font-size: 1.1em; margin-top: 15px; margin-bottom: 5px; }
 
-    /* Info/Alert boxes - softer styling */
+    /* Ensure all general text is dark/black for readability (including st.markdown and labels) */
+    .stMarkdown, label, p, .stCaption, div[data-testid="stText"] { color: #333 !important; }
+
+    /* Info/Alert boxes */
     div[data-testid="stAlert"] { background-color: #f7f6f4 !important; border: 1px solid #dcd4c3 !important; border-radius: 0.25rem !important; }
     div[data-testid="stAlert"] > div:first-child { background-color: transparent !important; }
     div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"],
@@ -99,7 +103,7 @@ def parse_pasted_ids(raw: str) -> List[str]:
     tokens = re.split(r"[\s,;]+", raw.strip())
     cleaned = [t.strip().strip('"').strip("'") for t in tokens if t.strip()]
     seen, out = set(), []
-    for t in cleaned:
+    for t in tokens:
         if t not in seen:
             seen.add(t)
             out.append(t)
@@ -143,14 +147,12 @@ def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
     if not csv_url:
         return pd.DataFrame()
     try:
-        # on_bad_lines='skip' ensures the tool doesn't crash on slightly malformed rows
         df = pd.read_csv(csv_url, dtype=str, keep_default_na=False, on_bad_lines='skip')
         for c in df.columns:
             if df[c].dtype == object:
                 df[c] = df[c].astype(str).str.strip()
         return df
     except Exception as e:
-        # Improved error message for HTTP 400/access issues
         if "400" in str(e) or "403" in str(e) or "404" in str(e):
              st.error(
                 "❌ **Failed to Read Google Sheets Data (Access/Sharing Error)**"
@@ -187,12 +189,15 @@ def select_order_and_rename(df: pd.DataFrame, colmap: Dict[str, str]) -> pd.Data
     return out
 
 
-def to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Conversion Output") -> bytes:
-    """Converts DataFrame to an Excel (.xlsx) file in memory."""
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
-    return buf.getvalue()
+def to_xlsx_bytes_with_spinner(df: pd.DataFrame, sheet_name: str = "Conversion Output") -> bytes:
+    """Converts DataFrame to Excel bytes, showing a spinner during the process."""
+    with st.spinner("Generating Excel file... Please wait."):
+        # Added a small delay to ensure spinner is visible, improving UX
+        time.sleep(0.5) 
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+        return buf.getvalue()
 
 # -----------------------------
 # App Main Content (English)
@@ -205,10 +210,12 @@ with left:
     st.markdown("---")
     st.markdown(
         """
-        **Welcome to the Item Number Mapping Tool.**
+        **This tool is designed to help you quickly map your old Muuto Item Numbers (Item-Variants or EANs) to the new product codes.**
         
-        This tool allows you to **quickly identify the new Muuto Item Numbers** by searching with your old Item-Variants or EANs.
-        Follow the three steps below to get started:
+        **Process Overview:**
+        * **Step 1:** Ensure the connection to the central Muuto mapping sheet is established.
+        * **Step 2:** Paste your list of old item numbers.
+        * **Step 3:** View the conversion results and download the complete table as an Excel file.
         """
     )
 with right:
@@ -323,8 +330,10 @@ else:
         use_container_width=True, 
         hide_index=True,
     )
-
-    xlsx = to_xlsx_bytes(ordered, sheet_name="Muuto Item Conversion")
+    
+    # GENERATE FILE WITH SPINNER
+    xlsx = to_xlsx_bytes_with_spinner(ordered, sheet_name="Muuto Item Conversion")
+    
     st.download_button(
         label="Download Results as Excel File (.xlsx)",
         data=xlsx,
@@ -333,15 +342,13 @@ else:
         key="download_button"
     )
 
-# --- Footnote ---
+# --- Footnote (Fjernet som ønsket) ---
+
+# --- Customer Support Note (Beholdt) ---
 st.markdown("---")
 st.markdown(
     """
 <div style="text-align: center;">
-<small>
-Ensure your Google Sheet is publicly accessible (Viewer or Published). Leading zeros are preserved by reading all data as text.
-</small>
-<br>
 <small>
 For support, please contact your Muuto sales representative.
 </small>
