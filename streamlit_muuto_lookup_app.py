@@ -4,7 +4,7 @@ from io import BytesIO
 import os
 import re
 from typing import Dict, List
-import time # Tilføjet for spinner
+import time 
 
 # --- File-dependent Constants ---
 # This path should point to your logo file (e.g., 'muuto_logo.png' in the same directory)
@@ -17,7 +17,7 @@ except NameError:
 # -----------------------------
 # Constants
 # -----------------------------
-# USER'S SPECIFIC BROWSER LINK INCLUDING GID
+# The Google Sheet URL remains here, but is hidden from the customer UI.
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1S50it_q1BahpZCPW8dbuN7DyOMnyDgFIg76xIDSoXEk/edit?gid=1056617222#gid=1056617222"
 
 OUTPUT_HEADERS = [
@@ -113,23 +113,19 @@ def parse_pasted_ids(raw: str) -> List[str]:
 def to_csv_export_url(url: str) -> str:
     """
     Accepts a Google Sheets URL and returns a direct CSV export URL.
-    Optimized to convert standard /edit link (including GID) to CSV export link.
+    This function is only for internal use to get the raw data link.
     """
     if not url:
         return ""
     url = url.strip()
     
-    # Check for the standard (shorter) /edit or standard ID format
     m_edit = re.search(r"https://docs.google.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     if m_edit:
         sheet_id = m_edit.group(1)
-        # Extract GID (Sheet Tab ID) from the URL
         gid_match = re.search(r"[?&#]gid=(\d+)", url)
         gid = gid_match.group(1) if gid_match else "0"
-        # This is the standard, reliable CSV export format for /edit links
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         
-    # Check for the long, published ID format (d/e/...) for completeness
     m_pub = re.search(r"https://docs.google.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", url)
     if m_pub:
         doc_id_e = m_pub.group(1)
@@ -137,13 +133,12 @@ def to_csv_export_url(url: str) -> str:
         gid = gid_match.group(1) if gid_match else "0"
         return f"https://docs.google.com/spreadsheets/d/e/{doc_id_e}/pub?gid={gid}&single=true&output=csv"
         
-    # Return as-is if no match
     return url
 
 
-@st.cache_data(show_spinner="Fetching and processing mapping data...")
+@st.cache_data(show_spinner="Loading and preparing mapping database...") # Changed spinner text
 def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
-    """Loads mapping data from a Google Sheets CSV export, with improved error handling."""
+    """Loads mapping data from Google Sheets (internal function)."""
     if not csv_url:
         return pd.DataFrame()
     try:
@@ -153,13 +148,12 @@ def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
                 df[c] = df[c].astype(str).str.strip()
         return df
     except Exception as e:
-        if "400" in str(e) or "403" in str(e) or "404" in str(e):
-             st.error(
-                "❌ **Failed to Read Google Sheets Data (Access/Sharing Error)**"
-                "\n\n**Action Required:** Please confirm that the sheet is correctly set up as **'Published to the web'** (`File > Share > Publish to the web`) OR **'Anyone with the link' (Viewer)**."
-            )
-        else:
-            st.error(f"❌ An unexpected error occurred while reading the sheet: {e}")
+        # Simplified error message for the customer, keeping the detailed error only for internal debugging via Streamlit logs.
+        st.error(
+            "❌ **Conversion Tool Error.** The mapping database could not be loaded. "
+            "Please try refreshing the page. If the issue persists, contact Muuto support."
+        )
+        # Developers can still see the original error in the logs (e.g., HTTP 400/403)
         return pd.DataFrame()
 
 
@@ -192,7 +186,6 @@ def select_order_and_rename(df: pd.DataFrame, colmap: Dict[str, str]) -> pd.Data
 def to_xlsx_bytes_with_spinner(df: pd.DataFrame, sheet_name: str = "Conversion Output") -> bytes:
     """Converts DataFrame to Excel bytes, showing a spinner during the process."""
     with st.spinner("Generating Excel file... Please wait."):
-        # Added a small delay to ensure spinner is visible, improving UX
         time.sleep(0.5) 
         buf = BytesIO()
         with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
@@ -200,7 +193,34 @@ def to_xlsx_bytes_with_spinner(df: pd.DataFrame, sheet_name: str = "Conversion O
         return buf.getvalue()
 
 # -----------------------------
-# App Main Content (English)
+# Internal Setup (Hidden from UI)
+# -----------------------------
+csv_url = to_csv_export_url(DEFAULT_SHEET_URL)
+mapping_df = read_mapping_from_gsheets(csv_url) if csv_url else pd.DataFrame()
+
+# Check for successful internal load
+if mapping_df.empty:
+    st.stop() # Stop the app if internal loading fails and error message is displayed
+
+# Internal column validation and preparation
+required = OUTPUT_HEADERS + ["OLD Item-variant", "Ean no."]
+colmap = map_case_insensitive(mapping_df, required)
+
+if not colmap.get("OLD Item-variant") or not colmap.get("Ean no."):
+    st.error(
+        "❌ Internal Error: Required mapping columns are missing. Please contact Muuto support."
+    )
+    st.stop()
+
+old_col = colmap["OLD Item-variant"]
+ean_col = colmap["Ean no."]
+work = mapping_df.copy()
+work[old_col] = work[old_col].astype(str).str.strip()
+work[ean_col] = work[ean_col].astype(str).str.strip()
+
+
+# -----------------------------
+# App Main Content (Customer-facing flow)
 # -----------------------------
 
 # --- Header and Introduction ---
@@ -210,12 +230,11 @@ with left:
     st.markdown("---")
     st.markdown(
         """
-        **This tool is designed to help you quickly map your old Muuto Item Numbers (Item-Variants or EANs) to the new product codes.**
+        **This tool is the simplest way to map your legacy Item-Variants and EANs to the new Muuto Item Numbers.**
         
-        **Process Overview:**
-        * **Step 1:** Ensure the connection to the central Muuto mapping sheet is established.
-        * **Step 2:** Paste your list of old item numbers.
-        * **Step 3:** View the conversion results and download the complete table as an Excel file.
+        **How It Works:**
+        * **1. Paste IDs:** Enter your old item codes below.
+        * **2. View & Download:** Get instant results showing the new Item Number, Description, Family, and Category.
         """
     )
 with right:
@@ -225,53 +244,9 @@ with right:
 st.markdown("---")
 
 # -----------------------------
-# Step 1: Data Setup
+# Step 1: Paste Item IDs (NOW THE ONLY INPUT STEP)
 # -----------------------------
-st.header("1. Data Setup: Mapping Sheet Source")
-
-st.info(
-    "**Note:** Ensure your Google Sheet contains the full mapping and includes columns named **'OLD Item-variant'** and **'Ean no.'** for lookups."
-)
-
-gsheets_url_raw = st.text_input(
-    "Google Sheets Link",
-    value=DEFAULT_SHEET_URL,
-    placeholder="Paste a link like https://docs.google.com/spreadsheets/d/....",
-    help=(
-        "The app converts this link for direct CSV export in the background. Ensure the sheet is accessible via a public link (Viewer or Published)."
-    ),
-)
-
-# Resolve Google Sheets CSV export URL and load mapping
-csv_url = to_csv_export_url(gsheets_url_raw)
-mapping_df = read_mapping_from_gsheets(csv_url) if csv_url else pd.DataFrame()
-
-if mapping_df.empty:
-    st.info("Please provide a valid Google Sheets link in Step 1, and ensure access is granted.")
-    st.stop()
-
-# Validate required lookup columns
-required = OUTPUT_HEADERS + ["OLD Item-variant", "Ean no."]
-colmap = map_case_insensitive(mapping_df, required)
-
-if not colmap.get("OLD Item-variant") or not colmap.get("Ean no."):
-    st.error(
-        f"❌ Required lookup columns not found. Ensure your sheet contains **'OLD Item-variant'** and **'Ean no.'**."
-    )
-    st.stop()
-
-# Prepare lookup columns as strings
-old_col = colmap["OLD Item-variant"]
-ean_col = colmap["Ean no."]
-work = mapping_df.copy()
-work[old_col] = work[old_col].astype(str).str.strip()
-work[ean_col] = work[ean_col].astype(str).str.strip()
-
-
-# -----------------------------
-# Step 2: Paste Item IDs
-# -----------------------------
-st.header("2. Paste Item IDs")
+st.header("1. Paste Item IDs")
 
 raw_input = st.text_area(
     "Paste your Old Item-Variants or EAN Numbers here.",
@@ -287,12 +262,12 @@ ids = parse_pasted_ids(raw_input)
 
 
 # -----------------------------
-# Step 3: Results and Export
+# Step 2: Results and Export (SIMPLIFIED)
 # -----------------------------
-st.header("3. Results and Export")
+st.header("2. Results and Export")
 
 if not ids:
-    st.info("Paste your Item IDs in Step 2 to run the lookup.")
+    st.info("Paste your Item IDs in Step 1 to run the lookup.")
 else:
     # --- Lookup Logic ---
     mask = work[old_col].isin(ids) | work[ean_col].isin(ids)
@@ -315,12 +290,12 @@ else:
 
     # --- Display Not Found ---
     if not_found:
-        st.caption("The following IDs could not be found in your Mapping Sheet (check for typos):")
+        st.caption("The following IDs could not be found in the database (check for typos):")
         st.code("\n".join(not_found), language=None)
         st.markdown("---")
         
     if ordered.empty:
-        st.error("None of the entered IDs were matched in your sheet. Please check your inputs and sheet data.")
+        st.error("None of the entered IDs were matched. Please check your inputs.")
         st.stop()
 
     # --- Result Table and Download ---
@@ -342,9 +317,7 @@ else:
         key="download_button"
     )
 
-# --- Footnote (Fjernet som ønsket) ---
-
-# --- Customer Support Note (Beholdt) ---
+# --- Customer Support Note ---
 st.markdown("---")
 st.markdown(
     """
