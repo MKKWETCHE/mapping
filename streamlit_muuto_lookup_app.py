@@ -38,7 +38,7 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Styling (Ensures download button text is white)
+# Styling (Ensures download button text is WHITE)
 # -----------------------------
 st.markdown(
     """
@@ -76,7 +76,6 @@ st.markdown(
     div[data-testid="stButton"] button[data-testid^="stBaseButton"] {
         border: 1px solid #5B4A14 !important; 
         background-color: #5B4A14 !important; 
-        color: #FFFFFF !important; /* DOWNLOAD BUTTON TEXT IS WHITE */
         padding: 0.5rem 1rem !important; 
         font-size: 1rem !important; 
         line-height: 1.5 !important; 
@@ -84,6 +83,13 @@ st.markdown(
         font-weight: 600 !important; 
         text-transform: uppercase !important;
     }
+    
+    /* SPECIFIC CSS TO FORCE WHITE FONT COLOR ON THE DOWNLOAD BUTTON LINK/TEXT */
+    div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"] > div > a,
+    div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"] > div > span {
+        color: #FFFFFF !important;
+    }
+
     div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"]:hover,
     div[data-testid="stButton"] button[data-testid^="stBaseButton"]:hover {
         background-color: #4A3D10 !important; 
@@ -125,7 +131,6 @@ def to_csv_export_url(url: str) -> str:
         return ""
     url = url.strip()
     
-    # Check for the standard (shorter) /edit or standard ID format
     m_edit = re.search(r"https://docs.google.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     if m_edit:
         sheet_id = m_edit.group(1)
@@ -133,7 +138,6 @@ def to_csv_export_url(url: str) -> str:
         gid = gid_match.group(1) if gid_match else "0"
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         
-    # Check for the long, published ID format (d/e/...) for completeness
     m_pub = re.search(r"https://docs.google.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", url)
     if m_pub:
         doc_id_e = m_pub.group(1)
@@ -144,8 +148,6 @@ def to_csv_export_url(url: str) -> str:
     return url
 
 
-# NOTE: @st.cache_data is kept here, but the call to this function is moved
-# to be triggered only AFTER IDs are pasted (in the main logic).
 @st.cache_data(show_spinner="Loading and preparing mapping database...")
 def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
     """Loads mapping data from Google Sheets (internal function)."""
@@ -158,12 +160,10 @@ def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
                 df[c] = df[c].astype(str).str.strip()
         return df
     except Exception as e:
-        # Simplified error message for the customer
         st.error(
             "❌ **Conversion Tool Error.** The mapping database could not be loaded. "
             "Please try refreshing the page. If the issue persists, contact Muuto support."
         )
-        # Developers can still see the original error in the logs (e.g., HTTP 400/403)
         return pd.DataFrame()
 
 
@@ -249,16 +249,12 @@ ids = parse_pasted_ids(raw_input)
 # -----------------------------
 if ids:
     # --- Internal Setup (TRIGGERED HERE) ---
-    # Convert Google Sheet URL to CSV export URL
     csv_url = to_csv_export_url(DEFAULT_SHEET_URL)
-    
-    # Load data (spinner from @st.cache_data is triggered here)
     mapping_df = read_mapping_from_gsheets(csv_url)
     
     if mapping_df.empty:
-        st.stop() # Stop the app if internal loading fails
+        st.stop()
 
-    # Internal column validation and preparation
     required = OUTPUT_HEADERS + ["OLD Item-variant", "Ean no."]
     colmap = map_case_insensitive(mapping_df, required)
 
