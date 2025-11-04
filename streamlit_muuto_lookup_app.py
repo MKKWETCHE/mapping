@@ -3,19 +3,19 @@ import pandas as pd
 from io import BytesIO
 import os
 import re
-from typing import List, Tuple, Dict
+from typing import Dict
 
 # -----------------------------
 # Page configuration
 # -----------------------------
 st.set_page_config(
     layout="wide",
-    page_title="Muuto Lookup Tool",
-    page_icon="favicon.png",  # keep same asset name
+    page_title="Muuto Mapping Lookup",
+    page_icon="favicon.png",
 )
 
 # -----------------------------
-# Styling reused from previous app
+# Styling (reused)
 # -----------------------------
 st.markdown(
     """
@@ -72,14 +72,13 @@ st.markdown(
 # Constants
 # -----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_MAPPING_PATH = os.path.join(BASE_DIR, "mapping.xlsx")
+MAPPING_PATH = os.path.join(BASE_DIR, "mapping.xlsx")
 LOGO_PATH = os.path.join(BASE_DIR, "muuto_logo.png")
 
-# Expected output order and header names
 OUTPUT_HEADERS = [
     "New Item No.",
     "OLD Item-variant",
-    "Ean no.",  # use exact header spelling from mapping file
+    "Ean no.",
     "Description",
     "Family",
     "Category",
@@ -89,106 +88,83 @@ OUTPUT_HEADERS = [
 # Helpers
 # -----------------------------
 
-def parse_pasted_ids(raw: str) -> List[str]:
-    """Split on whitespace, commas, semicolons, and tabs. Preserve hyphens and leading zeros."""
+def parse_pasted_ids(raw: str):
     if not raw:
         return []
     tokens = re.split(r"[\s,;]+", raw.strip())
-    # filter empties and normalize by stripping outer quotes
     cleaned = [t.strip().strip('"').strip("'") for t in tokens if t.strip()]
-    # keep distinct while preserving order
-    seen = set()
-    result = []
+    seen, out = set(), []
     for t in cleaned:
         if t not in seen:
             seen.add(t)
-            result.append(t)
-    return result
-
-
-def _read_mapping_with_values(xlsx_bytes: bytes) -> pd.DataFrame:
-    """Read Excel with formula *values* using openpyxl data_only=True, then build DataFrame.
-    Ensures concatenation results in column 'OLD Item-variant' are resolved.
-    """
-    from openpyxl import load_workbook
-    wb = load_workbook(filename=BytesIO(xlsx_bytes), data_only=True, read_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        return pd.DataFrame()
-    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
-    data = rows[1:]
-    df = pd.DataFrame(data, columns=headers)
-    return df
-
-
-def load_mapping(file_uploader) -> Tuple[pd.DataFrame, str]:
-    if file_uploader is not None:
-        xlsx_bytes = file_uploader.getvalue()
-        try:
-            df = _read_mapping_with_values(xlsx_bytes)
-            source = "uploaded"
-            return df, source
-        except Exception as e:
-            st.error(f"Kunne ikke læse den uploadede mapping-fil: {e}")
-            return pd.DataFrame(), "error"
-    # fallback to bundled file path
-    if os.path.exists(DEFAULT_MAPPING_PATH):
-        try:
-            with open(DEFAULT_MAPPING_PATH, "rb") as f:
-                df = _read_mapping_with_values(f.read())
-            source = "bundled"
-            return df, source
-        except Exception as e:
-            st.error(f"Kunne ikke læse mapping.xlsx i repoet: {e}")
-            return pd.DataFrame(), "error"
-    st.error("Ingen mapping-fil fundet. Upload en mapping.xlsx.")
-    return pd.DataFrame(), "missing"
-
-
-def normalize_columns_case_insensitive(df: pd.DataFrame, required: List[str]) -> Dict[str, str]:
-    """Return a dict mapping canonical required names to actual df columns matched case-insensitively."""
-    lower_map = {c.lower(): c for c in df.columns}
-    out = {}
-    for name in required:
-        key = name.lower()
-        if key in lower_map:
-            out[name] = lower_map[key]
-        else:
-            out[name] = None
+            out.append(t)
     return out
 
 
-def select_and_order(df: pd.DataFrame, colmap: Dict[str, str]) -> pd.DataFrame:
+def read_mapping_values_only() -> pd.DataFrame:
+    """Read mapping.xlsx as values, case-insensitive column matching."""
+    if not os.path.exists(MAPPING_PATH):
+        st.error("mapping.xlsx not found in repository root.")
+        return pd.DataFrame()
+    try:
+        df = pd.read_excel(MAPPING_PATH, dtype=str, engine="openpyxl")
+    except Exception as e:
+        st.error(f"Failed to read mapping.xlsx: {e}")
+        return pd.DataFrame()
+    for c in df.columns:
+        if df[c].dtype == object:
+            df[c] = df[c].astype(str).str.strip()
+    return df
+
+
+def map_case_insensitive(df: pd.DataFrame, required: list) -> Dict[str, str]:
+    lower_map = {c.lower(): c for c in df.columns}
+    colmap = {}
+    for name in required:
+        colmap[name] = lower_map.get(name.lower())
+    return colmap
+
+
+def select_order_and_rename(df: pd.DataFrame, colmap: Dict[str, str]) -> pd.DataFrame:
     cols = []
-    for cname in OUTPUT_HEADERS:
-        actual = colmap.get(cname)
-        if actual is None:
-            df[cname] = None
-            cols.append(cname)
-        else:
+    for h in OUTPUT_HEADERS:
+        actual = colmap.get(h)
+        if actual and actual in df.columns:
             cols.append(actual)
+        else:
+            df[h] = None
+            cols.append(h)
     out = df[cols].copy()
-    # Rename to canonical output headers if the actual names differ
+    # rename back to canonical headers
     rename_map = {colmap[h]: h for h in OUTPUT_HEADERS if colmap.get(h) and colmap[h] != h}
     if rename_map:
         out = out.rename(columns=rename_map)
     return out
 
 
-def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Lookup Output") -> bytes:
+def to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Lookup Output") -> bytes:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     return buf.getvalue()
 
 # -----------------------------
-# Header with logo
+# Header
 # -----------------------------
 left, right = st.columns([6, 1])
 with left:
     st.title("Muuto Mapping Lookup")
-    st.caption("Indsæt Muuto vare-variant numre eller EAN numre. Vi matcher mod mapping.xlsx og returnerer et Excel-udtræk.")
+    st.markdown(
+        """
+**What this app does**
+
+1. Paste a list of IDs (Muuto item-variant numbers or EANs).
+2. The app looks up each ID in `mapping.xlsx` in the repository root.
+3. It matches on **either** `OLD Item-variant` **or** `Ean no.`.
+4. It returns a table with these columns, in order: `New Item No.`, `OLD Item-variant`, `Ean no.`, `Description`, `Family`, `Category`.
+5. You can download the result as an Excel file.
+        """
+    )
 with right:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=120)
@@ -196,92 +172,79 @@ with right:
 st.markdown("---")
 
 # -----------------------------
-# Controls
+# Paste input
 # -----------------------------
-col_a, col_b = st.columns([2, 1])
-with col_a:
-    uploaded = st.file_uploader("Upload mapping.xlsx (valgfrit)", type=["xlsx"], help="Hvis du ikke uploader, bruger appen mapping.xlsx fra repoet.")
-with col_b:
-    st.write(" ")
-    st.write(" ")
-    sample_btn = st.button("Indsæt eksempelværdier")
-
-if sample_btn:
-    st.session_state["paste_box"] = """5710562801234\nMTO-CHAIR-001-01\n5710562805678\nMTO-SOFA-CHAIS-LEFT-22"""
-
+st.subheader("Paste IDs")
+st.caption("Separate with line breaks, commas, or semicolons. Leading zeros are preserved.")
 raw_input = st.text_area(
-    "Indsæt liste her",
+    "Paste list here",
     key="paste_box",
     height=200,
-    placeholder="Indsæt numre adskilt af linjeskift, komma eller semikolon",
+    placeholder="Example:\n5710562801234\nMTO-CHAIR-001-01\n5710562805678\nMTO-SOFA-CHAIS-LEFT-22",
 )
-
 ids = parse_pasted_ids(raw_input)
 
-mapping_df, source = load_mapping(uploaded)
-
-required_headers = OUTPUT_HEADERS.copy()
-# plus lookup columns needed explicitly
-required_for_lookup = set(required_headers) | {"OLD Item-variant", "Ean no."}
-colmap = normalize_columns_case_insensitive(mapping_df, sorted(required_for_lookup))
-
-missing = [name for name in required_for_lookup if colmap.get(name) is None]
+# -----------------------------
+# Load mapping from repo only
+# -----------------------------
+mapping_df = read_mapping_values_only()
 if mapping_df.empty:
-    st.info("Indlæs en gyldig mapping.xlsx for at fortsætte.")
-elif missing:
-    st.error(
-        "Mapping-filen mangler disse kolonner (matches case-insensitivt): " + ", ".join(missing)
-    )
+    st.stop()
+
+required = OUTPUT_HEADERS.copy()  # output columns
+required.extend(["OLD Item-variant", "Ean no."])  # ensure lookup columns recognized
+colmap = map_case_insensitive(mapping_df, required)
+if not colmap.get("OLD Item-variant") or not colmap.get("Ean no."):
+    st.error("Required columns not found (case-insensitive): 'OLD Item-variant' and/or 'Ean no.'")
+    st.stop()
+
+# Prepare lookup columns
+old_col = colmap["OLD Item-variant"]
+ean_col = colmap["Ean no."]
+work = mapping_df.copy()
+work[old_col] = work[old_col].astype(str).str.strip()
+work[ean_col] = work[ean_col].astype(str).str.strip()
+
+# -----------------------------
+# Lookup
+# -----------------------------
+st.subheader("Lookup")
+if not ids:
+    st.info("Paste IDs to run the lookup.")
 else:
-    # Prepare key columns as strings
-    old_col = colmap["OLD Item-variant"]
-    ean_col = colmap["Ean no."]
-    work = mapping_df.copy()
-    work[old_col] = work[old_col].astype(str).str.strip()
-    work[ean_col] = work[ean_col].astype(str).str.strip()
+    mask = work[old_col].isin(ids) | work[ean_col].isin(ids)
+    matches = work.loc[mask].copy()
 
-    # Lookup when user has entered ids
-    if not ids:
-        st.info("Indsæt værdier for at slå op.")
-    else:
-        input_df = pd.DataFrame({"input": ids})
+    matched_keys = set(matches[old_col].dropna().astype(str)) | set(matches[ean_col].dropna().astype(str))
+    not_found = [x for x in ids if x not in matched_keys]
 
-        mask = work[old_col].isin(ids) | work[ean_col].isin(ids)
-        matches = work.loc[mask].copy()
+    ordered = select_order_and_rename(matches, colmap)
 
-        # Which inputs did not match
-        matched_keys = set(matches[old_col].dropna().astype(str)) | set(matches[ean_col].dropna().astype(str))
-        not_found = [x for x in ids if x not in matched_keys]
+    c1, c2, c3 = st.columns([1, 1, 4])
+    with c1:
+        st.metric("IDs provided", len(ids))
+    with c2:
+        st.metric("Matches", len(ordered))
+    with c3:
+        if not_found:
+            st.caption("IDs without a match:")
+            st.code("\n".join(not_found), language=None)
 
-        # Order output
-        ordered = select_and_order(matches, colmap)
+    st.dataframe(ordered, use_container_width=True, hide_index=True)
 
-        st.subheader("Resultat")
-        c1, c2, c3 = st.columns([1, 1, 4])
-        with c1:
-            st.metric("Antal indlæste", len(ids))
-        with c2:
-            st.metric("Matches", len(ordered))
-        with c3:
-            if not_found:
-                st.caption("Værdier uden match:")
-                st.code("\n".join(not_found), language=None)
-
-        st.dataframe(ordered, use_container_width=True, hide_index=True)
-
-        xlsx = to_excel_bytes(ordered)
-        st.download_button(
-            label="Download Excel",
-            data=xlsx,
-            file_name="muuto_mapping_lookup.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+    xlsx = to_xlsx_bytes(ordered)
+    st.download_button(
+        label="Download Excel",
+        data=xlsx,
+        file_name="muuto_mapping_lookup.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 # Footnote
 st.markdown(
     """
 <small>
-Bemærk: Formelceller i mapping.xlsx læses som <em>værdier</em> for at sikre at sammenkædede felter i "OLD Item-variant" bliver korrekt brugt til opslag.
+This app reads values from `mapping.xlsx`. If your file used formulas for `OLD Item-variant`, ensure the workbook is saved with calculated values.
 </small>
 """,
     unsafe_allow_html=True,
