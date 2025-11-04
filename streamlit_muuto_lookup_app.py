@@ -16,7 +16,8 @@ except NameError:
 # -----------------------------
 # Constants
 # -----------------------------
-DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1S50it_q1BahpZCPW8dbuN7DyOMnyDgFIg76xIDSoXEk/edit?usp=sharing"
+# UPDATED WITH THE NEW PUBLISHED LINK
+DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQPRmVmc0LYISduQdJyfz-X3LJlxiEDCNwW53LhFsWp5fFDS8V669rCd9VGoygBZSAZXeSNZ5fquPen/pubhtml"
 
 OUTPUT_HEADERS = [
     "New Item No.",
@@ -28,7 +29,7 @@ OUTPUT_HEADERS = [
 ]
 
 # -----------------------------
-# Page configuration (FAVICON KEPT AS REQUESTED)
+# Page configuration (Favicon and title)
 # -----------------------------
 st.set_page_config(
     layout="wide",
@@ -38,8 +39,6 @@ st.set_page_config(
 
 # -----------------------------
 # Styling (Refined for Muuto brand experience)
-# Accent: 5B4A14 (Deep Brown/Gold) | Background: EFEEEB (Light Warm Gray)
-# NOTE: The base styling from your original code is maintained, but key brand colors are enforced.
 # -----------------------------
 st.markdown(
     """
@@ -48,9 +47,9 @@ st.markdown(
     .main .block-container { background-color: #EFEEEB !important; padding-top: 2rem; }
     
     /* Headings for a structured look and better branding */
-    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; } /* Changed h1 color from #333 to #5B4A14 */
-    h2 { color: #333; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #CCC; } /* Added border for separation */
-    h3 { color: #5B4A14; font-size: 1.5em; padding-bottom: 3px; margin-top: 20px; margin-bottom: 10px; } /* Updated h3 color/size */
+    h1 { color: #5B4A14; font-size: 2.5em; margin-top: 0; }
+    h2 { color: #333; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #CCC; } 
+    h3 { color: #5B4A14; font-size: 1.5em; padding-bottom: 3px; margin-top: 20px; margin-bottom: 10px; }
     h4 { color: #333; font-size: 1.1em; margin-top: 15px; margin-bottom: 5px; }
 
     /* Info/Alert boxes - softer styling */
@@ -58,7 +57,7 @@ st.markdown(
     div[data-testid="stAlert"] > div:first-child { background-color: transparent !important; }
     div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"],
     div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] p { color: #31333F !important; }
-    div[data-testid="stAlert"] svg { fill: #5B4A14 !important; } /* Changed alert icon color */
+    div[data-testid="stAlert"] svg { fill: #5B4A14 !important; }
 
     /* Inputs - Focus state */
     div[data-testid="stTextArea"] textarea:focus,
@@ -69,12 +68,12 @@ st.markdown(
         border-color: #5B4A14 !important; box-shadow: 0 0 0 1px #5B4A14 !important;
     }
 
-    /* Buttons (Muuto Brand Accent) - OVERWRITING ORIGINAL WHITE/BROWN BUTTONS */
+    /* Buttons (Muuto Brand Accent) */
     div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"],
     div[data-testid="stButton"] button[data-testid^="stBaseButton"] {
         border: 1px solid #5B4A14 !important; background-color: #5B4A14 !important; color: #FFFFFF !important;
         padding: 0.5rem 1rem !important; font-size: 1rem !important; line-height: 1.5 !important; border-radius: 0.25rem !important;
-        font-weight: 600 !important; text-transform: uppercase !important; /* Made buttons uppercase and solid for impact */
+        font-weight: 600 !important; text-transform: uppercase !important;
     }
     div[data-testid="stDownloadButton"] button[data-testid^="stBaseButton"]:hover,
     div[data-testid="stButton"] button[data-testid^="stBaseButton"]:hover {
@@ -108,35 +107,58 @@ def parse_pasted_ids(raw: str) -> List[str]:
 
 
 def to_csv_export_url(url: str) -> str:
-    """Accepts a Google Sheets URL and returns a direct CSV export URL."""
+    """
+    Accepts a Google Sheets URL (including the new /pubhtml format) and returns a direct CSV export URL.
+    This logic is robust enough to handle the new published format.
+    """
     if not url:
         return ""
     url = url.strip()
-    if "export?format=csv" in url:
-        return url
-    m = re.search(r"https://docs.google.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
-    if not m:
-        return url
-    sheet_id = m.group(1)
-    gid_match = re.search(r"[?&#]gid=(\d+)", url)
-    gid = gid_match.group(1) if gid_match else "0"
-    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    
+    # 1. Handle standard /edit link
+    m_edit = re.search(r"https://docs.google.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+    if m_edit:
+        sheet_id = m_edit.group(1)
+        gid_match = re.search(r"[?&#]gid=(\d+)", url)
+        gid = gid_match.group(1) if gid_match else "0"
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        
+    # 2. Handle /pubhtml link (new format)
+    m_pub = re.search(r"https://docs.google.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", url)
+    if m_pub and "/pubhtml" in url:
+        doc_id_e = m_pub.group(1)
+        # For /pubhtml, we use the /pub?gid=...&output=csv format
+        gid_match = re.search(r"[?&#]gid=(\d+)", url)
+        gid = gid_match.group(1) if gid_match else "0"
+        return f"https://docs.google.com/spreadsheets/d/e/{doc_id_e}/pub?gid={gid}&single=true&output=csv"
+        
+    # 3. Return as-is if no match (might already be a raw CSV link)
+    return url
 
 
-@st.cache_data(show_spinner="Fetching and processing mapping data...") # Added spinner text
+@st.cache_data(show_spinner="Fetching and processing mapping data...")
 def read_mapping_from_gsheets(csv_url: str) -> pd.DataFrame:
-    """Loads mapping data from a Google Sheets CSV export."""
+    """Loads mapping data from a Google Sheets CSV export, with improved error handling."""
     if not csv_url:
         return pd.DataFrame()
     try:
-        df = pd.read_csv(csv_url, dtype=str, keep_default_na=False)
+        # on_bad_lines='skip' ensures the tool doesn't crash on slightly malformed rows
+        df = pd.read_csv(csv_url, dtype=str, keep_default_na=False, on_bad_lines='skip')
         for c in df.columns:
             if df[c].dtype == object:
                 df[c] = df[c].astype(str).str.strip()
         return df
     except Exception as e:
-        # Improved error message for customer
-        st.error(f"❌ Failed to read Google Sheets CSV export. Please check URL and sharing settings. Details: {e}")
+        # Improved error message for HTTP 400/access issues
+        if "400" in str(e) or "403" in str(e) or "404" in str(e):
+             st.error(
+                "❌ **Failed to Read Google Sheets Data (Access/Sharing Error)**"
+                "\n\n**Potential Fixes:**"
+                "\n1. **Publish to Web:** Ensure the sheet is **Published to the web** (`File > Share > Publish to the web`). The current link is in a published format, but ensure the source is live."
+                "\n2. **URL Integrity:** Double-check that the link is correct."
+            )
+        else:
+            st.error(f"❌ An unexpected error occurred while reading the sheet: {e}")
         return pd.DataFrame()
 
 
@@ -199,7 +221,7 @@ st.markdown("---")
 # -----------------------------
 # Step 1: Data Setup
 # -----------------------------
-st.header("1. Data Setup: Mapping Sheet Source ⚙️")
+st.header("1. Data Setup: Mapping Sheet Source")
 
 st.info(
     "**Note:** Ensure your Google Sheet contains the full mapping and includes columns named **'OLD Item-variant'** and **'Ean no.'** for lookups."
@@ -210,8 +232,7 @@ gsheets_url_raw = st.text_input(
     value=DEFAULT_SHEET_URL,
     placeholder="Paste a link like https://docs.google.com/spreadsheets/d/....",
     help=(
-        "Ensure your sheet is shared as **'Anyone with the link' (Viewer)** or is **'Published to the web'**. "
-        "The app automatically converts the link for CSV export."
+        "The app converts this link for direct CSV export in the background. It is highly recommended to use a **'Published to the web'** link for stable access."
     ),
 )
 
@@ -220,7 +241,7 @@ csv_url = to_csv_export_url(gsheets_url_raw)
 mapping_df = read_mapping_from_gsheets(csv_url) if csv_url else pd.DataFrame()
 
 if mapping_df.empty:
-    st.info("Please provide a valid Google Sheets link to continue.")
+    st.info("Please provide a valid Google Sheets link in Step 1, and ensure access is granted.")
     st.stop()
 
 # Validate required lookup columns
@@ -244,7 +265,7 @@ work[ean_col] = work[ean_col].astype(str).str.strip()
 # -----------------------------
 # Step 2: Paste Item IDs
 # -----------------------------
-st.header("2. Paste Item IDs 📝")
+st.header("2. Paste Item IDs")
 
 raw_input = st.text_area(
     "Paste your Old Item-Variants or EAN Numbers here.",
@@ -262,10 +283,10 @@ ids = parse_pasted_ids(raw_input)
 # -----------------------------
 # Step 3: Results and Export
 # -----------------------------
-st.header("3. Results and Export 📊")
+st.header("3. Results and Export")
 
 if not ids:
-    st.info("⬆️ Paste your Item IDs in Step 2 to run the lookup.")
+    st.info("Paste your Item IDs in Step 2 to run the lookup.")
 else:
     # --- Lookup Logic ---
     mask = work[old_col].isin(ids) | work[ean_col].isin(ids)
@@ -319,7 +340,7 @@ st.markdown(
     """
 <div style="text-align: center;">
 <small>
-Tip: Publishing the Google Sheet to the web guarantees a stable CSV export link. Leading zeros are preserved by reading all data as text.
+Tip: Using a 'Published to the web' link guarantees stable access. Leading zeros are preserved by reading all data as text.
 </small>
 <br>
 <small>
