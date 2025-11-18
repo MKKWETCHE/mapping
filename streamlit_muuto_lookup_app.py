@@ -222,7 +222,6 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
 left, right = st.columns([6, 1])
 with left:
     st.title("Muuto Item Number Converter")
-    st.markdown("---")
     st.markdown(
         """
         **Welcome to the Muuto Item Number Converter**
@@ -231,7 +230,7 @@ with left:
         Your **EAN numbers remain unchanged**, but the **old Muuto item numbers have been replaced to ensure a clearer and more consistent structure**.
 
         **How to use the tool:**
-        1. Copy the Muuto item numbers or the EAN codes you currently have in your system.  
+        1. Copy the Muuto item numbers you currently have in your system.  
         2. Paste them into the field below.  
         3. The tool will return:  
             - The new Muuto item number  
@@ -242,15 +241,15 @@ with left:
         Please feel free to contact us at **customercare@muuto.com** for support.
         """
     )
+
 with right:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=120)
 
-st.markdown("---")
+st.header("1. Paste Item Numbers")
 
-st.header("1. Paste Item Numbers or EAN codes")
 raw_input = st.text_area(
-    "Paste Old Muuto Item Numbers or EAN Codes here:",
+    "Paste Old Muuto Item Numbers here:",
     height=200,
     key="ids_input",
 )
