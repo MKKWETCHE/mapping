@@ -242,8 +242,8 @@ with left:
         **This tool is the simplest way to map your legacy Item-Variants and EANs to the new Muuto Item Numbers.**
         
         **How It Works:**
-        * **1. Paste IDs:** Enter your old item codes below.
-        * **2. View & Download:** Get instant results showing the new Item Number, Description, Family, and Category.
+        * **1. Paste IDs:** Enter your old item codes or EAN numbers below.
+        * **2. View & Download:** Get instant results showing the new Item Number, Description, Family, and Category. None of the entered ID’s were a match. The ID could be wrong or the item could be discontinued. Please check your inputs and reach out to customercare@muuto.com if you have any questions.
         """
     )
 with right:
