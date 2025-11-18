@@ -294,9 +294,14 @@ if submitted:
                         by=["Match Type", "Query"],
                         ascending=[True, True],
                     )
-                    display_cols = ["Query", "Match Type"] + OUTPUT_HEADERS
-                    display_df = results_sorted[display_cols]
+                   results_sorted = results.sort_values(
+                        by=["Match Type", "Query"],
+                        ascending=[True, True],
+                    )
 
+                    results_sorted = results_sorted.rename(columns={"Query": "Your Input"})
+                    display_df = results_sorted[display_cols]
+    
                     st.session_state["results_df"] = display_df
                     st.session_state["matches_count"] = matches_count
                     st.session_state["ids_count"] = len(ids)
