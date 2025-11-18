@@ -197,12 +197,12 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
 
         if idxs:
             tmp = df.loc[idxs].copy()
-            tmp["Your input"] = raw_id
+            tmp["Query"] = raw_id
             tmp["Match Type"] = "Exact"
             rows.append(tmp)
         else:
             empty_row = {h: None for h in OUTPUT_HEADERS}
-            empty_row["Your input"] = raw_id
+            empty_row["Queryt"] = raw_id
             empty_row["Match Type"] = "No match"
             rows.append(pd.DataFrame([empty_row]))
 
@@ -231,12 +231,12 @@ with left:
 
         **How to use the tool:**
         1. Copy the Muuto item numbers or EAN Codes you currently have in your system.  
-        2. Paste them into the field below. You can enter the item numbers or EAN Codes in any format.   
+        2. Paste them into the field below either as:   
             - One number per line.
             - Multiple numbers on the same line.
             - Numbers separated by spaces, commas, or semicolons.
             - A mix of different separators.
-        4. The tool will return a file with:  
+        3. The tool will return a file with:  
             - The new Muuto item number  
             - The corresponding EAN  
             - The product description  
