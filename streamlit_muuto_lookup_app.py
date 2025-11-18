@@ -202,7 +202,7 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
             rows.append(tmp)
         else:
             empty_row = {h: None for h in OUTPUT_HEADERS}
-            empty_row["Queryt"] = raw_id
+            empty_row["Query"] = raw_id  # rettet fra "Queryt"
             empty_row["Match Type"] = "No match"
             rows.append(pd.DataFrame([empty_row]))
 
@@ -290,18 +290,17 @@ if submitted:
                     results = exact_lookup(ids, mapping_df)
                     matches_count = int((results["Match Type"] != "No match").sum())
 
+                    # Sorter efter Match Type og Query, inden vi omdøber
                     results_sorted = results.sort_values(
                         by=["Match Type", "Query"],
                         ascending=[True, True],
                     )
-                   results_sorted = results.sort_values(
-                        by=["Match Type", "Query"],
-                        ascending=[True, True],
-                    )
 
+                    # Omdøb Query → Your Input og vælg kolonner til visning
                     results_sorted = results_sorted.rename(columns={"Query": "Your Input"})
+                    display_cols = ["Your Input", "Match Type"] + OUTPUT_HEADERS
                     display_df = results_sorted[display_cols]
-    
+
                     st.session_state["results_df"] = display_df
                     st.session_state["matches_count"] = matches_count
                     st.session_state["ids_count"] = len(ids)
