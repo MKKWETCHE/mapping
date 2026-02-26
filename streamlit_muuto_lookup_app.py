@@ -102,7 +102,7 @@ def normalize_id(s: str) -> str:
     """
     Normaliser ID til match:
     - strip whitespace
-    - hvis kun tal: fjern foranstillede nuller (03318 -> 3318, 07019 -> 7019)
+    - hvis kun tal: fjern foranstillede nuller
     - ellers: returner strengen som den er
     """
     s = str(s).strip()
@@ -129,12 +129,10 @@ def read_mapping_from_zip(zip_path: str, filename: str) -> pd.DataFrame:
                 st.error(f"ZIP file does not contain {filename}")
                 return pd.DataFrame()
 
-            # Gæt separator
             with zf.open(filename) as f:
                 head = f.read(5000).decode("utf-8", errors="ignore")
                 sep = autodetect_separator(head)
 
-            # Læs hele filen
             with zf.open(filename) as f:
                 df = pd.read_csv(
                     f,
@@ -163,11 +161,7 @@ def to_xlsx_bytes(df: pd.DataFrame) -> bytes:
 
 
 def build_index(df: pd.DataFrame) -> dict:
-    """
-    Byg index:
-    normaliseret ID -> liste af rækker (index)
-    Indexer både Old Item no. og Ean No.
-    """
+    """Byg index for Old Item no. + Ean No."""
     index_map = defaultdict(list)
 
     for i, val in df[OLD_COL_NAME].items():
@@ -184,9 +178,7 @@ def build_index(df: pd.DataFrame) -> dict:
 
 
 def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
-    """
-    For hvert ID: exact match på normaliseret værdi (OLD/EAN) vha. index.
-    """
+    """Exact match lookup (normaliseret) via index."""
     index_map = build_index(df)
     rows = []
 
@@ -207,7 +199,6 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
 
     result = pd.concat(rows, ignore_index=True)
 
-    # Sørg for at alle OUTPUT_HEADERS eksisterer
     for h in OUTPUT_HEADERS:
         if h not in result.columns:
             result[h] = None
@@ -260,7 +251,7 @@ ids = parse_pasted_ids(raw_input)
 submitted = st.button("Convert IDs")
 
 # ---------------------------------------------------------
-# LOGIK – submit + session_state til at bevare resultat
+# LOGIK
 # ---------------------------------------------------------
 if submitted:
     if not ids:
@@ -279,7 +270,6 @@ if submitted:
                         f"Actual columns: {list(mapping_df.columns)}"
                     )
                 else:
-                    # Sørg for at alle outputkolonner findes (kun dem i OUTPUT_HEADERS)
                     for h in OUTPUT_HEADERS:
                         if h not in mapping_df.columns:
                             mapping_df[h] = None
@@ -287,13 +277,11 @@ if submitted:
                     results = exact_lookup(ids, mapping_df)
                     matches_count = int((results["Match Type"] != "No match").sum())
 
-                    # Sorter efter Match Type og Query, inden vi omdøber
                     results_sorted = results.sort_values(
                         by=["Match Type", "Query"],
                         ascending=[True, True],
                     )
 
-                    # Omdøb Query → Your Input og vælg kolonner til visning
                     results_sorted = results_sorted.rename(columns={"Query": "Your Input"})
                     display_cols = ["Your Input", "Match Type"] + OUTPUT_HEADERS
                     display_df = results_sorted[display_cols]
@@ -303,7 +291,7 @@ if submitted:
                     st.session_state["ids_count"] = len(ids)
 
 # ---------------------------------------------------------
-# VIS RESULTATER, HVIS DE FINDES
+# VIS RESULTATER
 # ---------------------------------------------------------
 if "results_df" in st.session_state:
     display_df = st.session_state["results_df"]
