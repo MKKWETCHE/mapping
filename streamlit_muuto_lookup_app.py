@@ -73,6 +73,7 @@ st.markdown(
 # Hjælpefunktioner
 # ---------------------------------------------------------
 def parse_pasted_ids(raw: str) -> List[str]:
+    """Split input på whitespace/komma/semikolon og returnér unikke IDs."""
     if not raw:
         return []
     tokens = re.split(r"[\s,;]+", raw.strip())
@@ -87,6 +88,7 @@ def parse_pasted_ids(raw: str) -> List[str]:
 
 
 def autodetect_separator(first_chunk: str) -> str:
+    """Auto-detekter separator i CSV (semikolon, komma eller tab)."""
     if ";" in first_chunk:
         return ";"
     if "\t" in first_chunk:
@@ -97,6 +99,12 @@ def autodetect_separator(first_chunk: str) -> str:
 
 
 def normalize_id(s: str) -> str:
+    """
+    Normaliser ID til match:
+    - strip whitespace
+    - hvis kun tal: fjern foranstillede nuller (03318 -> 3318, 07019 -> 7019)
+    - ellers: returner strengen som den er
+    """
     s = str(s).strip()
     if not s:
         return ""
@@ -110,6 +118,7 @@ def normalize_id(s: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def read_mapping_from_zip(zip_path: str, filename: str) -> pd.DataFrame:
+    """Loader mapping.csv fra mapping.csv.zip med auto-separator."""
     if not os.path.exists(zip_path):
         st.error("mapping.csv.zip not found in repository.")
         return pd.DataFrame()
@@ -120,10 +129,12 @@ def read_mapping_from_zip(zip_path: str, filename: str) -> pd.DataFrame:
                 st.error(f"ZIP file does not contain {filename}")
                 return pd.DataFrame()
 
+            # Gæt separator
             with zf.open(filename) as f:
                 head = f.read(5000).decode("utf-8", errors="ignore")
                 sep = autodetect_separator(head)
 
+            # Læs hele filen
             with zf.open(filename) as f:
                 df = pd.read_csv(
                     f,
@@ -152,6 +163,11 @@ def to_xlsx_bytes(df: pd.DataFrame) -> bytes:
 
 
 def build_index(df: pd.DataFrame) -> dict:
+    """
+    Byg index:
+    normaliseret ID -> liste af rækker (index)
+    Indexer både Old Item no. og Ean No.
+    """
     index_map = defaultdict(list)
 
     for i, val in df[OLD_COL_NAME].items():
@@ -168,6 +184,9 @@ def build_index(df: pd.DataFrame) -> dict:
 
 
 def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
+    """
+    For hvert ID: exact match på normaliseret værdi (OLD/EAN) vha. index.
+    """
     index_map = build_index(df)
     rows = []
 
@@ -188,6 +207,7 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
 
     result = pd.concat(rows, ignore_index=True)
 
+    # Sørg for at alle OUTPUT_HEADERS eksisterer
     for h in OUTPUT_HEADERS:
         if h not in result.columns:
             result[h] = None
@@ -205,18 +225,22 @@ with left:
         """
         **Welcome to the Muuto Item Number Converter**
 
-        This tool helps convert old Muuto item numbers to the new structure.
-        Your **EAN numbers remain unchanged**, while old item numbers are converted.
+        This tool is designed to make the transition from our old item numbers to the new structure as smooth as possible.
+        Your **EAN numbers remain unchanged**, but the **old Muuto item numbers have been replaced to ensure a clearer and more consistent structure**.
 
         **How to use the tool:**
-        1. Copy the Muuto item numbers or EAN codes from your system.  
-        2. Paste them below (one per line or separated by space/comma/semicolon).  
-        3. The tool will return:
+        1. Copy the Muuto item numbers or EAN Codes you currently have in your system.  
+        2. Paste them into the field below either as:   
+            - One number per line.
+            - Multiple numbers on the same line.
+            - Numbers separated by spaces, commas, or semicolons.
+            - A mix of different separators.
+        3. The tool will return a file with:  
             - The new Muuto item number  
             - The corresponding EAN  
 
         If an item number cannot be matched, it may be discontinued or contain an error.  
-        Please contact **customercare@muuto.com** if you need assistance.
+        Please feel free to contact us at **customercare@muuto.com** for support.
         """
     )
 
@@ -235,6 +259,9 @@ raw_input = st.text_area(
 ids = parse_pasted_ids(raw_input)
 submitted = st.button("Convert IDs")
 
+# ---------------------------------------------------------
+# LOGIK – submit + session_state til at bevare resultat
+# ---------------------------------------------------------
 if submitted:
     if not ids:
         st.error("You must paste at least one ID before converting.")
@@ -252,6 +279,7 @@ if submitted:
                         f"Actual columns: {list(mapping_df.columns)}"
                     )
                 else:
+                    # Sørg for at alle outputkolonner findes (kun dem i OUTPUT_HEADERS)
                     for h in OUTPUT_HEADERS:
                         if h not in mapping_df.columns:
                             mapping_df[h] = None
@@ -259,11 +287,13 @@ if submitted:
                     results = exact_lookup(ids, mapping_df)
                     matches_count = int((results["Match Type"] != "No match").sum())
 
+                    # Sorter efter Match Type og Query, inden vi omdøber
                     results_sorted = results.sort_values(
                         by=["Match Type", "Query"],
                         ascending=[True, True],
                     )
 
+                    # Omdøb Query → Your Input og vælg kolonner til visning
                     results_sorted = results_sorted.rename(columns={"Query": "Your Input"})
                     display_cols = ["Your Input", "Match Type"] + OUTPUT_HEADERS
                     display_df = results_sorted[display_cols]
@@ -272,6 +302,9 @@ if submitted:
                     st.session_state["matches_count"] = matches_count
                     st.session_state["ids_count"] = len(ids)
 
+# ---------------------------------------------------------
+# VIS RESULTATER, HVIS DE FINDES
+# ---------------------------------------------------------
 if "results_df" in st.session_state:
     display_df = st.session_state["results_df"]
     matches_count = st.session_state.get("matches_count", 0)
