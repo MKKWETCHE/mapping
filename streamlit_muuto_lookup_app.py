@@ -23,6 +23,7 @@ OUTPUT_HEADERS = [
     "New Item No.",
     "Old Item no.",
     "Ean No.",
+    "Description",
 ]
 
 OLD_COL_NAME = "Old Item no."
