@@ -18,7 +18,7 @@ except NameError:
 MAPPING_ZIP_PATH = os.path.join(BASE_DIR, "mapping.csv.zip")
 MAPPING_FILENAME = "mapping.csv"
 
-# Kun de kolonner, du vil have i output (Description fjernet)
+# Output-kolonner (som du ønsker dem i Excel-output)
 OUTPUT_HEADERS = [
     "New Item No.",
     "Old Item no.",
@@ -117,6 +117,62 @@ def normalize_id(s: str) -> str:
     return s
 
 
+def normalize_colname(c: str) -> str:
+    """
+    Normaliser kolonnenavne så vi kan matche på tværs af variationer:
+    - lowercase
+    - trim
+    - fjern mellemrum
+    - fjern punktummer
+    """
+    c = str(c).strip().lower()
+    c = c.replace("\u00A0", " ")   # NBSP -> space
+    c = re.sub(r"\s+", " ", c)    # multiple spaces -> single
+    c = c.replace(" ", "")
+    c = c.replace(".", "")
+    return c
+
+
+def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Renamer relevante kolonner til vores canonical navne:
+      - New Item No.
+      - Old Item no.
+      - Ean No.
+      - Description
+
+    Så virker appen uanset om CSV har 'New Item No' vs 'New Item No.' osv.
+    """
+    if df.empty:
+        return df
+
+    # Lav et opslag fra normaliseret navn -> originalt navn
+    norm_to_original = {normalize_colname(c): c for c in df.columns}
+
+    # Vi leder efter disse normaliserede nøgler:
+    # olditemno / newitemno / eanno / description
+    candidates = {
+        "olditemno": "Old Item no.",
+        "newitemno": "New Item No.",
+        "eanno": "Ean No.",
+        "description": "Description",
+    }
+
+    rename_map = {}
+    for norm_key, canonical_name in candidates.items():
+        if norm_key in norm_to_original:
+            rename_map[norm_to_original[norm_key]] = canonical_name
+
+    df = df.rename(columns=rename_map)
+
+    # Ensure alle output headers eksisterer (så downstream altid virker)
+    for h in OUTPUT_HEADERS:
+        if h not in df.columns:
+            df[h] = None
+
+    return df
+
+
 @st.cache_data(show_spinner=False)
 def read_mapping_from_zip(zip_path: str, filename: str) -> pd.DataFrame:
     """Loader mapping.csv fra mapping.csv.zip med auto-separator."""
@@ -143,9 +199,13 @@ def read_mapping_from_zip(zip_path: str, filename: str) -> pd.DataFrame:
                     engine="python",
                 )
 
-        df.columns = [c.strip() for c in df.columns]
+        # Clean column names + values
+        df.columns = [str(c).strip() for c in df.columns]
         for c in df.columns:
             df[c] = df[c].astype(str).str.strip()
+
+        # Standardiser kolonnenavne (så Description osv. altid rammer rigtigt)
+        df = standardize_columns(df)
 
         return df
 
@@ -165,11 +225,13 @@ def build_index(df: pd.DataFrame) -> dict:
     """Byg index for Old Item no. + Ean No."""
     index_map = defaultdict(list)
 
+    # old item
     for i, val in df[OLD_COL_NAME].items():
         key = normalize_id(val)
         if key:
             index_map[key].append(i)
 
+    # ean
     for i, val in df[EAN_COL_NAME].items():
         key = normalize_id(val)
         if key:
@@ -200,6 +262,7 @@ def exact_lookup(ids: List[str], df: pd.DataFrame) -> pd.DataFrame:
 
     result = pd.concat(rows, ignore_index=True)
 
+    # Ensure output headers exist
     for h in OUTPUT_HEADERS:
         if h not in result.columns:
             result[h] = None
@@ -230,6 +293,7 @@ with left:
         3. The tool will return a file with:  
             - The new Muuto item number  
             - The corresponding EAN  
+            - The Description
 
         If an item number cannot be matched, it may be discontinued or contain an error.  
         Please feel free to contact us at **customercare@muuto.com** for support.
@@ -264,6 +328,9 @@ if submitted:
             if mapping_df.empty:
                 st.error("Mapping file is empty or unreadable.")
             else:
+                # Debug (kan fjernes når du har verificeret):
+                # st.write("CSV columns:", list(mapping_df.columns))
+
                 missing = [c for c in [OLD_COL_NAME, EAN_COL_NAME] if c not in mapping_df.columns]
                 if missing:
                     st.error(
@@ -271,10 +338,6 @@ if submitted:
                         f"Actual columns: {list(mapping_df.columns)}"
                     )
                 else:
-                    for h in OUTPUT_HEADERS:
-                        if h not in mapping_df.columns:
-                            mapping_df[h] = None
-
                     results = exact_lookup(ids, mapping_df)
                     matches_count = int((results["Match Type"] != "No match").sum())
 
@@ -285,6 +348,9 @@ if submitted:
 
                     results_sorted = results_sorted.rename(columns={"Query": "Your Input"})
                     display_cols = ["Your Input", "Match Type"] + OUTPUT_HEADERS
+
+                    # Nogle gange kan der ligge ekstra kolonner i result (fx andre mapping-kolonner).
+                    # Vi tager kun det vi vil vise.
                     display_df = results_sorted[display_cols]
 
                     st.session_state["results_df"] = display_df
